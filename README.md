@@ -18,7 +18,7 @@ This project demonstrates how to create a RESTful API using FastAPI to perform b
 1. Clone the repository:
 
    ```bash
-   git clone <repository_url>
+   git clone https://github.com/Marwan-Gama/saints-app.git
    ```
 
 2. Install the dependencies:
