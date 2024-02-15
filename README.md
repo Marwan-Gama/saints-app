@@ -37,15 +37,20 @@ This project demonstrates how to create a RESTful API using FastAPI to perform b
 
 ## Endpoints
 
-/: Homepage.
-/data: Fetch all customer data.
-/saints: Fetch all saints.
-/who?name={name}: Fetch customer by name.
-/saints (POST): Add a new saint.
-/short-desc: Fetch a short description of customers.
-/admin/saint/age/{min_age}/{max_age}: Fetch saints within a specific age range.
-/admin/notsaint/age/{min_age}/{max_age}: Fetch non-saints within a specific age range.
-/admin/name/{search_name}: Fetch saints by name.
-/admin/average: Fetch average ages of saints and non-saints.
+### Base Routes
+
+- **/**: Homepage.
+- **/data**: Fetch all customer data.
+- **/saints**: Fetch all saints.
+- **/who?name={name}**: Fetch customer by name.
+- **/saints** (POST): Add a new saint.
+
+### Additional Routes
+
+- **/short-desc**: Fetch a short description of customers.
+- **/admin/saint/age/{min_age}/{max_age}**: Fetch saints within a specific age range.
+- **/admin/notsaint/age/{min_age}/{max_age}**: Fetch non-saints within a specific age range.
+- **/admin/name/{search_name}**: Fetch saints by name.
+- **/admin/average**: Fetch average ages of saints and non-saints.
 
 ## This project is created by [Marwan Abu Gama].
