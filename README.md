@@ -47,3 +47,5 @@ This project demonstrates how to create a RESTful API using FastAPI to perform b
 /admin/notsaint/age/{min_age}/{max_age}: Fetch non-saints within a specific age range.
 /admin/name/{search_name}: Fetch saints by name.
 /admin/average: Fetch average ages of saints and non-saints.
+
+## This project is created by [Marwan Abu Gama].
