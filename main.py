@@ -1,11 +1,19 @@
-from typing import List
+from typing import List, Union
 from fastapi import Depends, FastAPI, HTTPException, Query,Path
 import mysql.connector
 from mysql.connector import Error
 from fastapi.responses import HTMLResponse
 from config import connection_config
+from pydantic import BaseModel
 
 app = FastAPI()
+
+class Customer(BaseModel):
+    id: int
+    name: str
+    age: int
+    occupation_name: str
+    isSaint: bool
 
 # Establish MySQL connection
 connection = mysql.connector.connect(**connection_config)
@@ -21,7 +29,7 @@ else:
 async def index():
     return "Ahalan! You can fetch some json by navigating to '/json'"
 
-@app.get("/data")
+@app.get("/data", response_model=List[Customer])
 async def get_data():
     try:
         cursor = connection.cursor()
@@ -46,7 +54,7 @@ async def get_data():
             cursor.close()
 
 
-@app.get("/saints")
+@app.get("/saints", response_model=List[Customer])
 async def get_saints():
     try:
         cursor = connection.cursor()
@@ -71,7 +79,7 @@ async def get_saints():
             cursor.close()
 
 
-@app.get("/who")
+@app.get("/who", response_model=Union[Customer, str])
 async def get_customer(name: str = Query(None, min_length=2, max_length=11)):
     try:
         cursor = connection.cursor()
@@ -97,7 +105,7 @@ async def get_customer(name: str = Query(None, min_length=2, max_length=11)):
 
 
 @app.post("/saints")
-async def add_saint(saint: dict):
+async def add_saint(saint: Customer):
     if saint:
         try:
             cursor = connection.cursor()
@@ -140,7 +148,7 @@ def get_cursor():
     return connection.cursor()
 
 
-@app.get("/admin/saint/age/{min_age}/{max_age}", response_model=List[dict])
+@app.get("/admin/saint/age/{min_age}/{max_age}", response_model=List[Customer])
 async def get_saints_in_age_range(min_age: int = Path(..., title="Minimum Age", ge=0), max_age: int = Path(..., title="Maximum Age", ge=0), cursor = Depends(get_cursor)):
     try:
         cursor.execute("SELECT * FROM customers WHERE isSaint = 1 AND age BETWEEN %s AND %s", (min_age, max_age))
@@ -160,7 +168,7 @@ async def get_saints_in_age_range(min_age: int = Path(..., title="Minimum Age", 
         raise HTTPException(status_code=500, detail="Failed to retrieve saints from database")
 
 
-@app.get("/admin/notsaint/age/{min_age}/{max_age}", response_model=List[dict])
+@app.get("/admin/notsaint/age/{min_age}/{max_age}", response_model=List[Customer])
 async def get_notsaints_in_age_range(min_age: int = Path(..., title="Minimum Age", ge=0), max_age: int = Path(..., title="Maximum Age", ge=0), cursor = Depends(get_cursor)):
     try:
         cursor.execute("SELECT * FROM customers WHERE isSaint = 0 AND age BETWEEN %s AND %s", (min_age, max_age))
@@ -180,7 +188,7 @@ async def get_notsaints_in_age_range(min_age: int = Path(..., title="Minimum Age
         raise HTTPException(status_code=500, detail="Failed to retrieve not saints from database")
 
 
-@app.get("/admin/name/{search_name}", response_model=List[dict])
+@app.get("/admin/name/{search_name}", response_model=List[Customer])
 async def get_saints_by_name(search_name: str = Path(..., title="Search Name"), cursor = Depends(get_cursor)):
     try:
         cursor.execute("SELECT * FROM customers WHERE isSaint = 1 AND name LIKE %s", (f"%{search_name}%",))
@@ -200,7 +208,7 @@ async def get_saints_by_name(search_name: str = Path(..., title="Search Name"), 
         raise HTTPException(status_code=500, detail="Failed to retrieve saints from database")
 
 
-@app.get("/admin/average", response_model=dict)
+@app.get("/admin/average", response_model=Customer)
 async def get_average_ages(cursor = Depends(get_cursor)):
     try:
         cursor.execute("SELECT AVG(age) FROM customers WHERE isSaint = 1")
@@ -214,4 +222,4 @@ async def get_average_ages(cursor = Depends(get_cursor)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="localhost", port=8000)
