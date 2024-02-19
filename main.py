@@ -8,21 +8,6 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-current_username = 0
-
-class Customer(BaseModel):
-    id: int
-    name: str
-    age: int
-    occupation_name: str
-    isSaint: bool
-    password: str
-    isAdmin: bool
-
-class LoginDetails(BaseModel):
-    username: str
-    password: str
-
 # Establish MySQL connection
 connection = mysql.connector.connect(**connection_config)
 
@@ -31,30 +16,9 @@ if connection.is_connected():
 else:
     print("Failed to connect to MySQL database")
 
-@app.post("/login")
-async def login(login_details: LoginDetails = Body(...)):
-    try:
-        cursor = connection.cursor()
-        cursor.execute("SELECT * FROM customers WHERE name = %s AND password = %s", (login_details.username, login_details.password))
-        customer = cursor.fetchone()
-        current_username = customer
-        if customer:
-            # If the customer exists in the database and the password matches
-            return {"message": "Login successful"}
-        else:
-            # If the customer does not exist in the database or the password does not match
-            raise HTTPException(status_code=401, detail="Unauthorized")
-    except Error as e:
-        print("Error during login:", e)
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
+current_username = "name"
 
-async def get_current_username():
-    return current_username
-
-def is_admin(username: str = Depends(get_current_username)):
+def username_is_admin(username):
     try:
         cursor = connection.cursor()
         cursor.execute(
@@ -74,6 +38,43 @@ def is_admin(username: str = Depends(get_current_username)):
         )
     finally:
         if "cursor" in locals():
+            cursor.close()
+
+
+class Customer(BaseModel):
+    id: int
+    name: str
+    age: int
+    occupation_name: str
+    isSaint: bool
+    password: str
+    isAdmin: bool
+
+class LoginDetails(BaseModel):
+    username: str
+    password: str
+
+
+
+@app.post("/login")
+async def login(login_details: LoginDetails = Body(...)):
+    global current_username
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT * FROM customers WHERE name = %s AND password = %s", (login_details.username, login_details.password))
+        customer = cursor.fetchone()
+        current_username = login_details.username
+        if customer:
+            # If the customer exists in the database and the password matches
+            return {"message": "Login successful"}
+        else:
+            # If the customer does not exist in the database or the password does not match
+            raise HTTPException(status_code=401, detail="Unauthorized")
+    except Error as e:
+        print("Error during login:", e)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    finally:
+        if 'cursor' in locals():
             cursor.close()
 
 
@@ -202,21 +203,27 @@ def get_cursor():
 
 
 @app.get("/admin/saint/age/{min_age}/{max_age}", response_model=List[Customer])
+
 async def get_saints_in_age_range(min_age: int = Path(..., title="Minimum Age", ge=0), max_age: int = Path(..., title="Maximum Age", ge=0), cursor = Depends(get_cursor)):
     try:
-        cursor.execute("SELECT * FROM customers WHERE isSaint = 1 AND age BETWEEN %s AND %s", (min_age, max_age))
-        saints = cursor.fetchall()
-        saint_list = []
-        for saint in saints:
-            saint_dict = {
-                "id": saint[0],
-                "name": saint[1],
-                "age": saint[2],
-                "occupation_name": saint[3],
-                "isSaint": bool(saint[4])
-            }
-            saint_list.append(saint_dict)
-        return saint_list
+        is_admin = username_is_admin(current_username)
+        if is_admin:
+            cursor.execute("SELECT * FROM customers WHERE isSaint = 1 AND age BETWEEN %s AND %s", (min_age, max_age))
+            saints = cursor.fetchall()
+            saint_list = []
+            for saint in saints:
+                saint_dict = {
+                    "id": saint[0],
+                    "name": saint[1],
+                    "age": saint[2],
+                    "occupation_name": saint[3],
+                    "isSaint": bool(saint[4]),
+                    "password": saint[5],  
+                    "isAdmin": bool(saint[6]) 
+
+                }
+                saint_list.append(saint_dict)
+            return saint_list
     except Error as e:
         raise HTTPException(status_code=500, detail="Failed to retrieve saints from database")
 
@@ -224,19 +231,24 @@ async def get_saints_in_age_range(min_age: int = Path(..., title="Minimum Age", 
 @app.get("/admin/notsaint/age/{min_age}/{max_age}", response_model=List[Customer])
 async def get_notsaints_in_age_range(min_age: int = Path(..., title="Minimum Age", ge=0), max_age: int = Path(..., title="Maximum Age", ge=0), cursor = Depends(get_cursor)):
     try:
-        cursor.execute("SELECT * FROM customers WHERE isSaint = 0 AND age BETWEEN %s AND %s", (min_age, max_age))
-        notsaints = cursor.fetchall()
-        notsaint_list = []
-        for notsaint in notsaints:
-            notsaint_dict = {
-                "id": notsaint[0],
-                "name": notsaint[1],
-                "age": notsaint[2],
-                "occupation_name": notsaint[3],
-                "isSaint": bool(notsaint[4])
-            }
-            notsaint_list.append(notsaint_dict)
-        return notsaint_list
+        is_admin = username_is_admin(current_username)
+        if is_admin:
+            cursor.execute("SELECT * FROM customers WHERE isSaint = 0 AND age BETWEEN %s AND %s", (min_age, max_age))
+            notsaints = cursor.fetchall()
+            notsaint_list = []
+            for notsaint in notsaints:
+                notsaint_dict = {
+                    "id": notsaint[0],
+                    "name": notsaint[1],
+                    "age": notsaint[2],
+                    "occupation_name": notsaint[3],
+                    "isSaint": bool(notsaint[4]),
+                    "password": notsaint[5],  
+                    "isAdmin": bool(notsaint[6]) 
+
+                }
+                notsaint_list.append(notsaint_dict)
+            return notsaint_list
     except Error as e:
         raise HTTPException(status_code=500, detail="Failed to retrieve not saints from database")
 
@@ -244,19 +256,21 @@ async def get_notsaints_in_age_range(min_age: int = Path(..., title="Minimum Age
 @app.get("/admin/name/{search_name}", response_model=List[Customer])
 async def get_saints_by_name(search_name: str = Path(..., title="Search Name"), cursor = Depends(get_cursor)):
     try:
-        cursor.execute("SELECT * FROM customers WHERE isSaint = 1 AND name LIKE %s", (f"%{search_name}%",))
-        saints = cursor.fetchall()
-        saint_list = []
-        for saint in saints:
-            saint_dict = {
-                "id": saint[0],
-                "name": saint[1],
-                "age": saint[2],
-                "occupation_name": saint[3],
-                "isSaint": bool(saint[4])
-            }
-            saint_list.append(saint_dict)
-        return saint_list
+        is_admin = username_is_admin(current_username)
+        if is_admin:
+            cursor.execute("SELECT * FROM customers WHERE isSaint = 1 AND name LIKE %s", (f"%{search_name}%",))
+            saints = cursor.fetchall()
+            saint_list = []
+            for saint in saints:
+                saint_dict = {
+                    "id": saint[0],
+                    "name": saint[1],
+                    "age": saint[2],
+                    "occupation_name": saint[3],
+                    "isSaint": bool(saint[4])
+                }
+                saint_list.append(saint_dict)
+            return saint_list
     except Error as e:
         raise HTTPException(status_code=500, detail="Failed to retrieve saints from database")
 
@@ -264,11 +278,13 @@ async def get_saints_by_name(search_name: str = Path(..., title="Search Name"), 
 @app.get("/admin/average", response_model=Customer)
 async def get_average_ages(cursor = Depends(get_cursor)):
     try:
-        cursor.execute("SELECT AVG(age) FROM customers WHERE isSaint = 1")
-        saint_avg_age = cursor.fetchone()[0]
-        cursor.execute("SELECT AVG(age) FROM customers WHERE isSaint = 0")
-        notsaint_avg_age = cursor.fetchone()[0]
-        return {"saint_avg_age": saint_avg_age, "notsaint_avg_age": notsaint_avg_age}
+        is_admin = username_is_admin(current_username)
+        if is_admin:
+            cursor.execute("SELECT AVG(age) FROM customers WHERE isSaint = 1")
+            saint_avg_age = cursor.fetchone()[0]
+            cursor.execute("SELECT AVG(age) FROM customers WHERE isSaint = 0")
+            notsaint_avg_age = cursor.fetchone()[0]
+            return {"saint_avg_age": saint_avg_age, "notsaint_avg_age": notsaint_avg_age}
     except Error as e:
         raise HTTPException(status_code=500, detail="Failed to retrieve average ages from database")
 
