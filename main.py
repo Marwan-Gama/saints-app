@@ -1,5 +1,5 @@
 from typing import List, Union
-from fastapi import Depends, FastAPI, HTTPException, Query,Path
+from fastapi import Body, Depends, FastAPI, HTTPException, Query,Path
 import mysql.connector
 from mysql.connector import Error
 from fastapi.responses import HTMLResponse
@@ -8,12 +8,20 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
+current_username = 0
+
 class Customer(BaseModel):
     id: int
     name: str
     age: int
     occupation_name: str
     isSaint: bool
+    password: str
+    isAdmin: bool
+
+class LoginDetails(BaseModel):
+    username: str
+    password: str
 
 # Establish MySQL connection
 connection = mysql.connector.connect(**connection_config)
@@ -23,6 +31,50 @@ if connection.is_connected():
 else:
     print("Failed to connect to MySQL database")
 
+@app.post("/login")
+async def login(login_details: LoginDetails = Body(...)):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT * FROM customers WHERE name = %s AND password = %s", (login_details.username, login_details.password))
+        customer = cursor.fetchone()
+        current_username = customer
+        if customer:
+            # If the customer exists in the database and the password matches
+            return {"message": "Login successful"}
+        else:
+            # If the customer does not exist in the database or the password does not match
+            raise HTTPException(status_code=401, detail="Unauthorized")
+    except Error as e:
+        print("Error during login:", e)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+
+async def get_current_username():
+    return current_username
+
+def is_admin(username: str = Depends(get_current_username)):
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "SELECT isAdmin FROM customers WHERE name = %s", (username,)
+        )
+        result = cursor.fetchone()
+        if result and result[0]:
+            return True
+        else:
+            raise HTTPException(
+                status_code=403, detail="User is not an admin"
+            )
+    except Error as e:
+        print("Error checking admin status:", e)
+        raise HTTPException(
+            status_code=500, detail="Internal Server Error"
+        )
+    finally:
+        if "cursor" in locals():
+            cursor.close()
 
 
 @app.get("/")
@@ -42,9 +94,11 @@ async def get_data():
                 "name": customer[1],
                 "age": customer[2],
                 "occupation_name": customer[3],
-                "isSaint": bool(customer[4])
+                "isSaint": bool(customer[4]),
+                "password": customer[5],
+                "isAdmin": bool(customer[6])
             }
-            customers_list.append(customer_dict)
+            customers_list.append(Customer(**customer_dict))
         return customers_list
     except Error as e:
         print("Error retrieving customer data from MySQL database:", e)
@@ -67,9 +121,11 @@ async def get_saints():
                 "name": saint[1],
                 "age": saint[2],
                 "occupation_name": saint[3],
-                "isSaint": bool(saint[4])
+                "isSaint": bool(saint[4]),
+                "password": saint[5],
+                "isAdmin": bool(saint[6])
             }
-            saint_list.append(saint_dict)
+            saint_list.append(Customer(**saint_dict))
         return saint_list
     except Error as e:
         print("Error retrieving saints from MySQL database:", e)
@@ -106,24 +162,21 @@ async def get_customer(name: str = Query(None, min_length=2, max_length=11)):
 
 @app.post("/saints")
 async def add_saint(saint: Customer):
-    if saint:
-        try:
-            cursor = connection.cursor()
-            cursor.execute("""
-                INSERT INTO customers (id, name, age, occupation_name, isSaint) 
-                VALUES (%s, %s, %s, %s, %s)
-            """, (saint['id'], saint['name'], saint['age'], saint['occupation']['name'], saint['occupation']['isSaint']))
-            connection.commit()
-            print("Saint added successfully to MySQL database")
-            return {"message": "Saint added successfully"}
-        except Error as e:
-            print("Error inserting data into MySQL table:", e)
-            raise HTTPException(status_code=500, detail="Failed to add Saint to database")
-        finally:
-            if 'cursor' in locals():
-                cursor.close()
-    else:
-        raise HTTPException(status_code=400, detail="Invalid Saint data")
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            INSERT INTO customers (id, name, age, occupation_name, isSaint, password, isAdmin) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (saint.id, saint.name, saint.age, saint.occupation_name, saint.isSaint, saint.password, saint.isAdmin))
+        connection.commit()
+        print("Saint added successfully to MySQL database")
+        return {"message": "Saint added successfully"}
+    except Error as e:
+        print("Error inserting data into MySQL table:", e)
+        raise HTTPException(status_code=500, detail="Failed to add Saint to database")
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
 
 
 @app.get("/short-desc", response_class=HTMLResponse)
