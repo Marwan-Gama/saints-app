@@ -1,5 +1,6 @@
 from typing import List, Union
-from fastapi import Body, Depends, FastAPI, HTTPException, Query,Path
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query,Path, Request, UploadFile
+from fastapi.staticfiles import StaticFiles
 import mysql.connector
 from mysql.connector import Error
 from fastapi.responses import HTMLResponse
@@ -7,6 +8,12 @@ from config import connection_config
 from pydantic import BaseModel
 
 app = FastAPI()
+
+app.mount("/assets", StaticFiles(directory="assets"), name="assets")
+
+def save_uploaded_file(file_name: str, file_contents: bytes):
+    with open(f"assets/{file_name}", "wb") as f:
+        f.write(file_contents)
 
 # Establish MySQL connection
 connection = mysql.connector.connect(**connection_config)
@@ -49,6 +56,7 @@ class Customer(BaseModel):
     isSaint: bool
     password: str
     isAdmin: bool
+    image_path: str  
 
 class LoginDetails(BaseModel):
     username: str
@@ -82,6 +90,57 @@ async def login(login_details: LoginDetails = Body(...)):
 async def index():
     return "Ahalan! You can fetch some json by navigating to '/json'"
 
+@app.get("/upload", response_class=HTMLResponse)
+async def upload_form(request: Request):
+    form_html = """
+    <html>
+    <head>
+        <title>File Upload Form</title>
+    </head>
+    <body>
+        <h2>Upload File</h2>
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <label for="file_name">Saints Name:</label><br>
+            <input type="text" id="file_name" name="file_name"><br>
+            <label for="image">Select a image:</label><br>
+            <input type="file" id="image" name="image"><br><br>
+            <input type="submit" value="Submit">
+        </form>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=form_html, status_code=200)
+
+
+@app.post("/upload")
+async def upload_saint_with_image(file_name: str = Form(...), image: UploadFile = File(...)):
+    try:
+        cursor = connection.cursor()
+
+        # Check if the provided name exists in the database
+        cursor.execute("SELECT name FROM customers WHERE name = %s", (file_name,))
+        customer = cursor.fetchone()
+
+        if customer:
+            # Save the uploaded image to the /assets directory
+            save_uploaded_file(image.filename, await image.read())
+
+            # Update the record with the image_path
+            cursor.execute("UPDATE customers SET image_path = %s WHERE name = %s", (image.filename, file_name))
+            connection.commit()
+
+            return {"message": "Image uploaded successfully and linked to the customer."}
+        else:
+            return {"message": f"Customer with name '{file_name}' does not exist."}
+
+    except Error as e:
+        print("Error uploading image:", e)
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+    finally:
+        if cursor:
+            cursor.close()
+
+
 @app.get("/data", response_model=List[Customer])
 async def get_data():
     try:
@@ -97,7 +156,8 @@ async def get_data():
                 "occupation_name": customer[3],
                 "isSaint": bool(customer[4]),
                 "password": customer[5],
-                "isAdmin": bool(customer[6])
+                "isAdmin": bool(customer[6]),
+                "image_path": customer[7]  
             }
             customers_list.append(Customer(**customer_dict))
         return customers_list
@@ -124,7 +184,9 @@ async def get_saints():
                 "occupation_name": saint[3],
                 "isSaint": bool(saint[4]),
                 "password": saint[5],
-                "isAdmin": bool(saint[6])
+                "isAdmin": bool(saint[6]),
+                "image_path": saint[7]  
+
             }
             saint_list.append(Customer(**saint_dict))
         return saint_list
@@ -184,11 +246,11 @@ async def add_saint(saint: Customer):
 async def get_short_desc():
     try:
         cursor = connection.cursor()
-        cursor.execute("SELECT name, occupation_name, id FROM customers")
+        cursor.execute("SELECT name, occupation_name, id, image_path FROM customers")
         customers_data = cursor.fetchall()
-        html_content = "<html><head><title>Customer Short Description</title></head><body><table border='1'><tr><th>Name</th><th>Occupation</th><th>ID</th></tr>"
+        html_content = "<html><head><title>Customer Short Description</title></head><body><table border='1'><tr><th>Name</th><th>Occupation</th><th>ID</th><th>Image</th></tr>"
         for customer in customers_data:
-            html_content += f"<tr><td><a href='/who?name={customer[0]}'>{customer[0]}</a></td><td>{customer[1]}</td><td>{customer[2]}</td></tr>"
+            html_content += f"<tr><td>{customer[0]}</td><td>{customer[1]}</td><td>{customer[2]}</td><td><img src='/assets/{customer[3]}' width='100' height='100'></td></tr>"
         html_content += "</table></body></html>"
         return html_content
     except Error as e:
